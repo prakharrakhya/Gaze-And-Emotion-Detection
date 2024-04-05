@@ -51,7 +51,7 @@ class DetectingAttendedVisualTargets:
             )
         # load weights
         model_dict = self.model.state_dict()
-        snapshot = torch.load(weight_path )
+        snapshot = torch.load(weight_path , map_location=torch.device('cpu'))
         snapshot = snapshot["model"]
         model_dict.update(snapshot)
         self.model.load_state_dict(model_dict)

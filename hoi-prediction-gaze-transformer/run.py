@@ -176,7 +176,7 @@ def main(opt):
     )
     # load model weights
     sttran_gaze_model = sttran_gaze_model.to(device)
-    incompatibles = sttran_gaze_model.load_state_dict(torch.load(model_path))
+    incompatibles = sttran_gaze_model.load_state_dict(torch.load(model_path , map_location=torch.device('cpu')))
     print(device)
     sttran_gaze_model.eval()
     print(f"STTranGaze loaded. Incompatible keys {incompatibles}")

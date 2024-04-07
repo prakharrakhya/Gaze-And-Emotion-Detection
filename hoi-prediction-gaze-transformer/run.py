@@ -4,7 +4,7 @@
 import sys
 
 sys.path.insert(0, "modules/object_tracking/yolov5")
-
+from frame_writer import drawfacebox_emotions , drawfacebox_hoi
 import argparse
 import numpy as np
 import cv2
@@ -26,13 +26,16 @@ from common.model_utils import (
 )
 from common.plot import draw_bboxes
 from common.metrics_utils import generate_triplets_scores
-
 from modules.object_tracking import HeadTracking, ObjectTracking
 from modules.gaze_following import GazeFollowing
 from modules.gaze_following.head_association import assign_human_head_frame
 from modules.sthoip_transformer.sttran_gaze import STTranGazeCrossAttention
 from modules.object_tracking import FeatureExtractionResNet101
 
+#emotion pipeline
+from transformers import pipeline
+emotion_detector = pipeline("image-classification", model="./hoi-prediction-gaze-transformer/weights/emotion_vit" )
+#------------------------
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -202,7 +205,10 @@ def main(opt):
     detection_dict = defaultdict(list)
     gaze_list = []
     hoi_list = []
+    covered_emo = 0
+    hoi_writer = []
     result_list = []
+    emotion_list = []
     # FIFO queues for sliding window
     frames_queue = deque(maxlen=sttran_sliding_window)
     frame_ids_queue = deque(maxlen=sttran_sliding_window)
@@ -229,11 +235,13 @@ def main(opt):
         # head detection
         h_bboxes, _, _, _, h_confs, _ = head_tracking_module.track_one(frame.to(device), frame0, draw=False)
         # human-head association
+        
         head_bbox_dict = assign_human_head_frame(
             h_bboxes, h_confs, human_bboxes, human_ids, matching_iou_thres, matching_method
         )
         # gaze following for each human
         frame_gaze_dict = {}
+        res_em_dict = []
         for human_id, head_bbox in head_bbox_dict.items():
             # no head found for this human_id
             if len(head_bbox) == 0:
@@ -244,6 +252,25 @@ def main(opt):
                 hidden_state = hx_memory[human_id]
             else:
                 hidden_state = None
+            
+            #---------------------emotions----------------------------------------------
+            if idx % fps == 0:
+                x1, y1, x2, y2 = head_bbox
+                width = x2 - x1
+                height = y2 - y1
+                path_emo = os.getcwd()
+                path_emo = str(path_emo)
+                cropped_frame = frame_annotated[y1:y1+height, x1:x1+width]
+                filename = path_emo + '\cface.jpg'
+                cv2.imwrite(filename, cropped_frame)
+                facial_emotion = emotion_detector(path_emo+"\cface.jpg")
+                res_emotion = facial_emotion[0]['label']
+                res_prob = facial_emotion[0]['score']
+                res = str(res_emotion) + ' : ' + str(res_prob)
+                res = 'person-'+str(human_id)+' = '+res
+                res_em_dict.append(res)
+            #---------------------emotions----------------------------------------------
+            
             # gaze model forward
             heatmap, _, hx, _, _, frame_annotated = gaze_following_module.detect_one(
                 frame0, head_bbox, hidden_state, draw=True, frame_to_draw=frame_annotated, id=human_id, arrow=True
@@ -252,7 +279,24 @@ def main(opt):
             hx_memory[human_id] = (hx[0].detach(), hx[1].detach())
             # process heatmap 64x64 (not include inout), store inout info separately
             frame_gaze_dict[int(human_id)] = heatmap.tolist()
-
+        
+        # emotion text writing--------------------------------
+        
+        if idx % fps == 0:
+            emotion_list.append(res_em_dict)
+        covered_emo = drawfacebox_emotions(frame_annotated , emotion_list[-1])
+        #------------------------------------------------
+        
+        #HOI Interaction----------------
+        if (len(hoi_writer) != 0):
+            
+            drawfacebox_hoi(frame_annotated , hoi_writer[-1] , covered_emo)
+            pass
+        #delete this stuffff-----------------------
+        filename = f'cool2.jpg'  # Save to Colab Drive
+        cv2.imwrite(filename, frame_annotated)
+        #---------------------------------------------------
+        
         # store result for every second
         if idx % fps == 0:
             bboxes = [bbox.tolist() for bbox in bboxes]
@@ -320,7 +364,6 @@ def main(opt):
                 entry["pred_labels"] = entry["pred_labels"].to(device)
                 entry["windows"] = windows.to(device)
                 entry["windows_out"] = windows_out.to(device)
-                print(device)
                 # forward
                 entry = sttran_gaze_model(entry)
                 # sigmoid or softmax
@@ -335,7 +378,7 @@ def main(opt):
                 interaction_distribution = concat_separated_head(
                     entry, len_preds, loss_type_dict, class_idxes_dict, device, True
                 )
-
+                #print(interaction_distribution)
             # process output
             frame_ids = list(frame_ids_queue)
             # window-wise result entry
@@ -397,6 +440,10 @@ def main(opt):
                 thres=hoi_thres,
             )
             s_hois = "-------------------------------\n"
+            
+            person_done = []
+            hoi_object = []
+            hoi_inters = []
             s_hois += f"Frame {idx}/{frame_num}:\n"
             for score, idx_pair, interaction_pred in triplets_scores:
                 subj_idx = window_result["pair_idxes"][idx_pair][0]
@@ -409,9 +456,25 @@ def main(opt):
                 obj_id = window_result["ids"][obj_idx]
                 interaction_name = interaction_classes[interaction_pred]
                 s_hois += f"{subj_name}{subj_id} - {interaction_name} - {obj_name}{obj_id}: {score}\n"
+            
+                if subj_id not in person_done:
+                    hoi_object.append(subj_name)
+                    hoi_object.append(subj_id)
+                    hoi_object.append(interaction_name)
+                    hoi_object.append(obj_name)
+                    hoi_object.append(obj_id)
+                    hoi_object.append(score)
+                    hoi_inters.append(hoi_object)
+                    hoi_object = []
+                    person_done.append(subj_id)
+            print(hoi_inters)
+            hoi_writer.append(hoi_inters)
             hoi_list.append(s_hois)
+            
             if print_hois:
                 print(s_hois)
+            
+            
 
     # release video writer
     video_writer.release()

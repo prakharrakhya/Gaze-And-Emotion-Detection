@@ -51,10 +51,8 @@ soupsieve==2.5
 stack-data==0.6.3
 sympy==1.12
 tokenizers==0.15.2
-torch==2.2.2
-torchaudio==2.2.2
+torch==2.2.2+cu121
 torchtext==0.17.2
-torchvision==0.17.2
 tqdm==4.66.2
 traitlets==5.14.2
 transformers==4.39.3
@@ -64,4 +62,5 @@ urllib3==2.2.1
 utils==1.0.2
 wcwidth==0.2.13
 websockets==12.0
-yt-dlp==2024.3.10
+torchvision==0.17.2+cu121
+torchaudio==2.2.2+cu121

@@ -458,12 +458,10 @@ def main(opt):
                 s_hois += f"{subj_name}{subj_id} - {interaction_name} - {obj_name}{obj_id}: {score}\n"
             
                 if subj_id not in person_done:
-                    hoi_object.append(subj_name)
-                    hoi_object.append(subj_id)
+                    hoi_object.append(f'{subj_name}{subj_id}')
                     hoi_object.append(interaction_name)
-                    hoi_object.append(obj_name)
-                    hoi_object.append(obj_id)
-                    hoi_object.append(score)
+                    hoi_object.append(f'{obj_name}{obj_id}')
+                    hoi_object.append(f'score: {score}')
                     hoi_inters.append(hoi_object)
                     hoi_object = []
                     person_done.append(subj_id)
